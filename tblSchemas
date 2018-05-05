@@ -1,0 +1,29 @@
+tblname doctor
+doctorId INT(11)
+doctorFirstName VARCHAR(150)
+doctorEmail VARCHAR(150)
+doctorPhone VARCHAR(100)
+doctorStatus VARCHAR(100)
+doctorDate DATETIME
+doctorLastName VARCHAR(150)
+siteID INT(11)
+
+tblname site
+id INT(11)
+siteName VARCHAR(200)
+siteLeadEmail VARCHAR(50)
+
+tblname ee_audit_events
+event_id INT(11)
+event_type VARCHAR(100)
+device_id VARCHAR(100)
+doctors_id INT(11)
+current_layer VARCHAR(100)
+current_card VARCHAR(100)
+previous_card VARCHAR(100)
+gesture_name VARCHAR(100)
+current_timezone VARCHAR(50)
+time_zone_offset VARCHAR(10)
+timestamp DATETIME
+remarks TEXT
+doctor_name VARCHAR(100)
