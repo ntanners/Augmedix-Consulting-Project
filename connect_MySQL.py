@@ -1,4 +1,6 @@
 import MySQLdb
+import sys
+import time
 
 QUERIES = {
     'describe': """DESCRIBE {}""",
@@ -52,9 +54,22 @@ def create_table(cur, tbl_name, tbl_schema):
             (", ".join(" ".join(row) for row in tbl_schema)) + ")"
     cur.execute(query)
 
-def run_fetch_query(cur, query):
+def run_fetch_query(cur, keyword):
+    if keyword == 'count' or keyword == 'describe':
+        query = QUERIES[keyword].format(sys.argv[2])
+    elif keyword == 'list':
+        query = QUERIES['table_list']
+    else:
+        raise "not a valid query"
     cur.execute(query)
     return cur
+
+def time_query(cur, keyword):
+    start_time = time.time()
+    cur = run_fetch_query(cur, keyword)
+    end_time = time.time()
+    return cur, end_time-start_time
+
 
 def main():
     rds_info = load_connection_info('./login/.rds', ['port'])
@@ -63,9 +78,10 @@ def main():
     # tbl_name = 'doctor'
     # tbl_schema = schemas[tbl_name]
     # create_table(cur, 'doctor_new', tbl_schema)
-    # cur = run_fetch_query(cur, QUERIES['table_list'])
-    # print(cur.fetchall())
-    # close_connection(con, cur)
+    cur, runtime  = time_query(cur, sys.argv[1])
+    print('the query took {:.2f} seconds, and the result was:'.format(runtime))
+    print(cur.fetchall())
+    close_connection(con, cur)
 
 if __name__ == '__main__':
     main()
