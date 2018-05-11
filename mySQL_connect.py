@@ -1,6 +1,8 @@
 import MySQLdb
 import sys
 import time
+import csv
+from datetime import datetime
 
 QUERIES = {
     'describe': """DESCRIBE {}""",
@@ -38,23 +40,8 @@ def close_connection(con, cur):
     con.close()
     print("Connection closed")
 
-def import_schemas():
-    with open('./tblSchemas') as schemas_file:
-        schemas = {}
-        for line in schemas_file:
-            line = line.split()
-            if len(line) == 0: continue
-            if line[0] == 'tblname':
-                tbl_name = line[1]
-                schemas[tbl_name] = []
-            else:
-                schemas[tbl_name].append(line)
-    return schemas
-
-def create_table(cur, tbl_name, tbl_schema):
-    query = """CREATE TABLE IF NOT EXISTS """ + tbl_name + " (" + \
-            (", ".join(" ".join(row) for row in tbl_schema)) + ")"
-    cur.execute(query)
+def delete_table_contents(cur, table):
+    cur.execute("DELETE FROM {}".format(table))
 
 def run_fetch_query(cur, keyword, table=None, limit=None):
     if keyword == 'contents_limit':
@@ -86,6 +73,62 @@ def run_query(cur, query):
     nrows = cur.execute(query)
     return nrows, cur
 
+
+def import_schemas():
+    with open('./tblSchemas') as schemas_file:
+        schemas = {}
+        for line in schemas_file:
+            line = line.split()
+            if len(line) == 0: continue
+            if line[0] == 'tblname':
+                tbl_name = line[1]
+                schemas[tbl_name] = []
+            else:
+                schemas[tbl_name].append(line)
+    return schemas
+
+def create_table(cur, tbl_name, tbl_schema):
+    query = """CREATE TABLE IF NOT EXISTS """ + tbl_name + " (" + \
+            (", ".join(" ".join(row) for row in tbl_schema)) + ")"
+    cur.execute(query)
+
+
+def schema_process(tbl_schema, j, item):
+    if tbl_schema[j][1] == 'DATETIME' and item != 'NULL':
+        try:
+            return datetime.strptime(item, "%Y-%m-%d %H:%M:%S")
+        except:
+            print(item)
+            return 'x'
+    elif 'INT' in tbl_schema[j][1]:
+        return int(item)
+    else:
+        return item
+
+def import_table_data(con, cur, tbl_name, file_name, tbl_schema):
+    file_records = []
+    create_query_str = """INSERT INTO {} VALUES {}""".format(tbl_name, '(' + ','.join(['%s'] * len(tbl_schema)) + ')')
+
+    with open(file_name) as csv_file:
+        reader = csv.reader(csv_file, delimiter=',')
+        for i, line in enumerate(reader):
+            # if i == 2: break
+            record = [schema_process(tbl_schema, j, item) for j, item in enumerate(line)]
+            file_records.append(record)
+            if i % 1000 == 0:
+                print('inserting 1000 rows')
+                cur.executemany(create_query_str, file_records)
+                con.commit()
+                file_records = []
+        print('inserting {} rows'.format(len(file_records)))
+        cur.executemany(create_query_str, file_records)
+        con.commit()
+
+
+def interval_query(cur, table, start, nrows):
+    nresults = cur.execute("""SELECT * FROM {} LIMIT {},{}""".format(table, start, nrows))
+    return nresults, cur
+
 def get_colnames(cur, table):
     n, cur = run_fetch_query(cur, 'describe', table)
     cols = cur.fetchall()
@@ -101,16 +144,25 @@ def time_query(cur, query):
 def main():
     rds_info = load_connection_info('./login/.rds', ['port'])
     con, cur = rds_mySQL_connection(rds_info)
-    # schemas = import_schemas()
-    # tbl_name = 'doctor'
-    # tbl_schema = schemas[tbl_name]
+    schemas = import_schemas()
+    tbl_name = sys.argv[1]
+    tbl_schema = schemas[tbl_name]
+    file_name = sys.argv[2]
+    delete_table_contents(cur, tbl_name)
+    create_table(cur, tbl_name, tbl_schema)
+    import_table_data(con, cur, tbl_name, file_name, tbl_schema)
+    cur = run_query("""SELECT COUNT(*) FROM {}""".format(tbl_name))
+    print(cur.fetchall())
+    # print(import_data[0])
+
+
     # create_table(cur, 'doctor_new', tbl_schema)
 
     # cur.execute("""SET net_read_timeout=28800""")
     # cur.execute("""SET GLOBAL connect_timeout=600""")
 
-    n, cur, time = time_query(cur, sys.argv[1])
-    print(n, cur.fetchone(), time)
+    # n, cur, time = time_query(cur, sys.argv[1])
+    # print(n, cur.fetchone(), time)
     # run_select_query(cur, 'ee_audit_events_orig', 200000)
     # keyword = sys.argv[1]
     # table, limit = None, None
