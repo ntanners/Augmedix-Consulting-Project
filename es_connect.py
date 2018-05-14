@@ -1,10 +1,12 @@
 from datetime import datetime
 
 from elasticsearch import Elasticsearch, helpers
-from mySQL_connect import load_connection_info, rds_mySQL_connection, close_connection, get_colnames, interval_query
+from mySQL_connect import load_connection_info, rds_mySQL_connection, close_connection, get_colnames, interval_query, \
+    read_schema_from_db
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import sys
+import requests
 import pdb
 import json
 
@@ -22,7 +24,7 @@ CONNECTION_IP = {'standalone': ['ec2-54-236-6-174.compute-1.amazonaws.com'],
 PORT = 9200
 TABLE = 'ee_audit_events_orig'
 INDEX = TABLE
-TYPE = 'records'
+TYPE = 'record'
 BATCHSIZE = 200000
 ES_IMPORT_TIMES = []
 
@@ -52,25 +54,19 @@ def benchmark_migrate(es, cur, table, testsize):
     # delete_index(es, 'test_index')
 
 
-def parallel_migrate(cur, table, colnames, workers, es, start, testsize): #es
+def parallel_migrate(es_list, workers, actions, batchsize): #es
     tpool = ThreadPoolExecutor(max_workers=workers)
     func = helpers.bulk
     futures = []
-    interval_start = start
-    interval_nrows = round(testsize / workers)
-    result_count = cur.rowcount
+    worker_start = 0
+    worker_end = int(round(batchsize / workers))
 
     for i in range(workers):
-        # nresults, cur = interval_query(cur, table, interval_start, interval_nrows)
-        # print('retrieved records {} - {} from MySQL:{}'.format(interval_start,interval_start+interval_nrows,table))
-        # interval_start += interval_nrows
-        action_count = min(result_count, interval_nrows)
-        actions = generate_bulk_actions(int(action_count), cur, colnames, table+'_index', 'record')
-        result_count -= action_count
-        # print('generated {} bulk actions for Elasticsearch import'.format(interval_nrows))
-        # print(len(actions))
-        actions = list(actions)
-        futures.append(tpool.submit(func, es, actions)) #es_parallel[i]
+        worker_actions = actions[worker_start:worker_end]
+        worker_start = worker_end
+        worker_end = min(worker_end + int(round(batchsize/workers)), batchsize)
+        es = es_list[i%len(es_list)]
+        futures.append(tpool.submit(func, es, worker_actions)) #es_parallel[i]
 
     for f in as_completed(futures):
         try:
@@ -79,43 +75,120 @@ def parallel_migrate(cur, table, colnames, workers, es, start, testsize): #es
             print('exception: {}'.format(exc))
 
 
-def parallel_batch_migrate(es, cur, table, workers, testsize, limit):
-    # es_parallel = [Elasticsearch(ip, port=PORT) for ip in CONNECTION_IP['cluster']]
-    # es = Elasticsearch(CONNECTION_IP['cluster1'])
+def parallel_batch_migrate(es_list, cur, table, workers, batchsize, limit, benchmark=False):
     colnames = get_colnames(cur, table)
     cur.execute("""SELECT COUNT(*) FROM {}""".format(table))
     nrows = min(limit, cur.fetchone()[0])
     start = 0
     while nrows > 0:
-        # print('executing parallel batch of {} records, starting at {}'.format(testsize, start))
+        print('executing parallel batch of {} records, starting at {}'.format(min(batchsize, nrows), start))
         mysql_start = time.time()
-        nresults, cur = interval_query(cur, table, start, testsize)
+        nresults, cur = interval_query(cur, table, start, batchsize)
         mysql_end = time.time()
         # print('MySQL Query: {} records at {:.6f} records/s'.format(nresults, (mysql_end-mysql_start)/nresults))
+        actions_start = time.time()
+        actions = list(generate_bulk_actions(nresults, cur, colnames, table+'_index', 'record'))
+        actions_end = time.time()
+        # if benchmark:
+        #     print('Actions generation time: {:.2f} s. Actions generation speed: {:.6f} s/record'.format(
+        #         actions_end-actions_start, (actions_end-actions_start)/nresults))
         es_start = time.time()
-        parallel_migrate(cur, table, colnames, workers, es, start, nresults) #es_parallel
+        parallel_migrate(es_list, workers, actions, nresults) #es_parallel
         es_end = time.time()
         ES_IMPORT_TIMES.append((es_end-es_start))
-        # print('ES Import: {} records at {:.6f} records/s'.format(nresults, (es_end-es_start)/nresults))
-        nrows -= testsize
-        start += testsize
+        if benchmark:
+            # print('ES insert time: {:.2f} s. ES insert speed: {:.6f} s/record'.format(es_end-es_start,
+            #                                                                           (es_end-es_start)/nresults))
+            ES_IMPORT_TIMES.append(es_end-es_start)
+        nrows -= batchsize
+        start += batchsize
+    print(sum(ES_IMPORT_TIMES))
 
 
-def migrate_table(es, cur, table, batchsize, limit):
+def migrate_table(es, cur, table, batchsize, limit, benchmark=False):
     colnames = get_colnames(cur, table)
     cur.execute("""SELECT COUNT(*) FROM {}""".format(table))
     nrows = min(limit, cur.fetchone()[0])
     start_point = 0
     results = []
     while nrows > 0:
-        print('retrieving records {} to {}'.format(start_point, start_point + min(nrows, batchsize)))
+        # print('retrieving records {} to {}'.format(start_point, start_point + min(nrows, batchsize)))
         nresults = cur.execute(
-            """SELECT * FROM {} ORDER BY 1 LIMIT {},{}""".format(table, start_point, min(nrows, batchsize)))
+            """SELECT * FROM {} LIMIT {},{}""".format(table, start_point, min(nrows, batchsize)))
+        # print('records retrieved')
         actions = generate_bulk_actions(int(nresults), cur, colnames, table + "_index", TYPE)
+        if benchmark:
+            es_start = time.time()
         insert_response = bulk_insert(es, actions)
-        print(insert_response)
+        if benchmark:
+            es_end = time.time()
+            ES_IMPORT_TIMES.append(es_end-es_start)
+            # print("ES insert time: {:.2f} s. ES insert speed: {:.6f} s/record".format(es_end-es_start,
+            #                                                                           (es_end-es_start)/nresults))
         nrows -= batchsize
         start_point += batchsize
+    print(sum(ES_IMPORT_TIMES))
+
+def parallel_requests_migrate(ip_list, workers, json_list, batchsize):
+    tpool = ThreadPoolExecutor(max_workers=workers)
+    func = requests.post
+    futures = []
+    worker_start = 0
+    worker_end = int(round(batchsize / workers) * 2)
+    for i in range(workers):
+        worker_json_list = json_list[worker_start:worker_end]
+        worker_json = "\n".join(map(json.dumps, worker_json_list)) + "\n"
+        worker_start = worker_end
+        worker_end = min(worker_end + int(round(batchsize / workers) * 2), batchsize*2)
+        ip = ip_list[i%len(ip_list)]
+        futures.append(tpool.submit(func, ip, data=worker_json, headers={"Content-type": "application/x-ndjson"}))
+    for f in as_completed(futures):
+        try:
+            result = f.result()
+            # print(result)
+            # pdb.set_trace()
+        except Exception as exc:
+            print('exception: {}'.format(exc))
+
+
+def parallel_batch_requests_migrate(ip_list, cur, table, workers, batchsize, limit, benchmark=False):
+    colnames = get_colnames(cur, table)
+    cur.execute("""SELECT COUNT(*) FROM {}""".format(table))
+    nrows = min(limit, cur.fetchone()[0])
+    start = 0
+    while nrows > 0:
+        print('executing parallel batch of {} records, starting at {}'.format(min(nrows,batchsize), start))
+        nresults, cur = interval_query(cur, table, start, batchsize)
+        # print('MySQL Query: {} records at {:.6f} records/s'.format(nresults, (mysql_end-mysql_start)/nresults))
+        actions_start = time.time()
+        json_list = generate_json(nresults, cur, colnames, table + '_index', 'record')
+        actions_end = time.time()
+        # if benchmark:
+        #     print('Actions generation time: {:.2f} s. Actions generation speed: {:.6f} s/record'.format(
+        #         actions_end-actions_start, (actions_end-actions_start)/nresults))
+        es_start = time.time()
+        parallel_requests_migrate(ip_list, workers, json_list, nresults)
+        es_end = time.time()
+        if benchmark:
+            ES_IMPORT_TIMES.append(es_end-es_start)
+            # print('ES insert time: {:.2f} s. ES insert speed: {:.6f} s/record'.format(es_end - es_start, (
+            #             es_end - es_start) / nresults))
+        nrows -= batchsize
+        start += batchsize
+    print(sum(ES_IMPORT_TIMES))
+
+def generate_json(nrows, cur, colnames, index_name, doc_type_name):
+    nrows = min(nrows, cur.rowcount)
+    body = []
+    header = {"index": {"_index": index_name, "_type": doc_type_name}}
+    for i in range(nrows):
+        line = cur.fetchone()
+        content = {}
+        for j, item in enumerate(line):
+            content[colnames[j]] = str(item)
+        body.append(header)
+        body.append(content)
+    return body
 
 
 def generate_bulk_actions(nrows, cur, colnames, index_name, doc_type_name):
@@ -135,11 +208,33 @@ def generate_bulk_actions(nrows, cur, colnames, index_name, doc_type_name):
     # return actions
 
 
+def generate_mapping(cur, table, doc_type_name):
+    schema = read_schema_from_db(cur, table)
+
+    properties = ""
+    for i,col in enumerate(schema):
+        colname = '"'+col[0]+'"'
+        if 'int' in col[1]:
+            dtype = '"integer"'
+        elif 'varchar' in col[1] or 'text' in col[1]:
+            dtype = '"text"'
+        elif col[1] == 'datetime':
+            dtype = '"date",\n"format": "yyyy-MM-dd HH:mm:ss"'
+        comma = ',' if i < len(schema)-1 else ''
+        properties += (colname + ': {\n"type": ' + dtype +'\n}' + comma + '\n')
+    mapping = '''{"mappings":{\n"''' + doc_type_name + '''":{\n"properties":{\n''' + properties +'}\n}\n}\n}'
+    return mapping
+
+
+def new_index(es, index_name, mapping):
+    response = es.indices.create(index=index_name, ignore=400, body=mapping)
+    return response
+
+
 def benchmark_import_size(cur, table, cluster):
     es = es_connection(CONNECTION_IP[cluster])
     for i in range(10):
         benchmark_migrate(es, cur, table, 100*(2**i))
-        delete_index(es, table+'_index')
 
 def benchmark_workers(cur, table, cluster):
     es = es_connection(CONNECTION_IP[cluster])
@@ -147,7 +242,6 @@ def benchmark_workers(cur, table, cluster):
         parallel_batch_migrate(es, cur, table, i, 10000, 30000)
         print('with {} workers, total import time: {:.2f}'.format(i, sum(ES_IMPORT_TIMES)))
         del ES_IMPORT_TIMES[:]
-        delete_index(es, table+'_index')
 
 def bulk_insert(es, actions):
     insert_response = helpers.bulk(es, actions)
@@ -164,14 +258,64 @@ def main():
     # numrows, cur = run_fetch_query(cur, 'contents', TABLE)
 
 
-    table = 'ee_audit_events_orig'
+    table = 'ee_audit_events'
     workers = 4
-    limit = 10000
+    limit = 100000
+    batch = 10000
+
+
+    # es = es_connection(CONNECTION_IP['cluster'])
 
     if sys.argv[1] == 'benchmark':
         benchmark_import_size(cur, table, sys.argv[2])
     elif sys.argv[1] == 'workertest':
         benchmark_workers(cur, table, sys.argv[2])
+    elif sys.argv[1] == 'delete':
+        es = es_connection(CONNECTION_IP[sys.argv[2]])
+        table = sys.argv[3]
+        delete_index(es, table+'_index')
+    elif sys.argv[1] == 'migrate':
+        es = es_connection(CONNECTION_IP[sys.argv[2]])
+        table = sys.argv[3]
+        index = table+'_index'
+        if es.indices.exists(index):
+            delete_index(es, index)
+        response = new_index(es, index, generate_mapping(cur, table, 'record'))
+        print(response)
+        migrate_table(es, cur, table, 10000, limit, benchmark=True)
+    elif sys.argv[1] == 'parallel':
+        es_list = [es_connection([connection]) for connection in CONNECTION_IP[sys.argv[2]]]
+        table = sys.argv[4]
+        index = table+'_index'
+        workers = int(sys.argv[3])
+        if es_list[0].indices.exists(index):
+            delete_index(es_list[0], index)
+        response = new_index(es_list[0], index, generate_mapping(cur, table, 'record'))
+        print(response)
+        parallel_batch_migrate(es_list, cur, table, workers, workers*batch, limit, benchmark=True)
+    elif sys.argv[1] == 'requests':
+        ip_list = ['http://' + connection + ':9200/' + table+"_index/_bulk" for connection in CONNECTION_IP[sys.argv[2]]]
+        es_list = [es_connection([connection]) for connection in CONNECTION_IP[sys.argv[2]]]
+        table = sys.argv[4]
+        index = table + '_index'
+        workers = int(sys.argv[3])
+        if es_list[0].indices.exists(index):
+            delete_index(es_list[0], index)
+        response = new_index(es_list[0], index, generate_mapping(cur, table, 'record'))
+        print(response)
+        parallel_batch_requests_migrate(ip_list, cur, table, workers, workers*batch, limit, benchmark=True)
+    elif sys.argv[1] == 'mapping':
+        mapping = generate_mapping(cur,sys.argv[2],"record")
+        print(mapping)
+    elif sys.argv[1] == 'new_index':
+        es = es_connection(CONNECTION_IP[sys.argv[2]])
+        table = sys.argv[3]
+        index = table+'_new_index'
+        print(index)
+        response = new_index(es, table+'_new_index', generate_mapping(cur, table, 'record'))
+        print(response)
+
+
 
     # parallel_batch_migrate(cur, 'ee_audit_events_orig', 4, 1000, 10000)
     # print(ES_IMPORT_SPEEDS)
@@ -192,7 +336,7 @@ def main():
     # numrows = cur.execute(query)
     # delete_response = delete_index(es, 'new_doctors')
     # print(delete_response)
-    # actions = generate_bulk_actions(numrows, cur, colnames, INDEX, 'records')
+    # actions = generate_bulk_actions(numrows, cur, colnames, INDEX, 'record')
     # insert_response = bulk_insert(es, actions)
     # print(insert_response)
     # delete_response = delete_index(es, 'new_doctors')

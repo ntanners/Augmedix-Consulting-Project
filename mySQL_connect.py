@@ -69,12 +69,17 @@ def run_select_query(cur, table, batchsize):
         start_point += batchsize
     # print(len(results))
 
-def run_query(cur, query):
+def run_query(cur, query, benchmark = False):
+    start_time = time.time()
     nrows = cur.execute(query)
-    return nrows, cur
+    end_time = time.time()
+    if benchmark:
+        return nrows, cur, end_time - start_time
+    else:
+        return nrows, cur
 
 
-def import_schemas():
+def import_schemas_from_file():
     with open('./tblSchemas') as schemas_file:
         schemas = {}
         for line in schemas_file:
@@ -86,6 +91,15 @@ def import_schemas():
             else:
                 schemas[tbl_name].append(line)
     return schemas
+
+
+def read_schema_from_db(cur, table):
+    nrows = cur.execute("""DESCRIBE {}""".format(table))
+    tbl_schema = []
+    for i in range(nrows):
+        row = cur.fetchone()
+        tbl_schema.append([row[0], row[1]])
+    return tbl_schema
 
 def create_table(cur, tbl_name, tbl_schema):
     query = """CREATE TABLE IF NOT EXISTS """ + tbl_name + " (" + \
@@ -144,15 +158,31 @@ def time_query(cur, query):
 def main():
     rds_info = load_connection_info('./login/.rds', ['port'])
     con, cur = rds_mySQL_connection(rds_info)
-    schemas = import_schemas()
-    tbl_name = sys.argv[1]
-    tbl_schema = schemas[tbl_name]
-    file_name = sys.argv[2]
-    delete_table_contents(cur, tbl_name)
-    create_table(cur, tbl_name, tbl_schema)
-    import_table_data(con, cur, tbl_name, file_name, tbl_schema)
-    cur = run_query("""SELECT COUNT(*) FROM {}""".format(tbl_name))
-    print(cur.fetchall())
+    schemas = import_schemas_from_file()
+    if sys.argv[1] == 'tables':
+        nrows, cur = run_query(cur, """SHOW TABLES""")
+        print(cur.fetchall())
+    elif sys.argv[1] == 'query':
+        nrows, cur = run_query(cur, sys.argv[2])
+        print('number of results: {}'.format(nrows))
+        if input('display all results (y/n)? ') == 'y':
+            print(cur.fetchall())
+    elif sys.argv[1] == 'tquery':
+        nrows, cur, query_time = run_query(cur, sys.argv[2], benchmark=True)
+        print('The query took {:.2f} seconds and produced {} rows.'.format(query_time, nrows))
+    elif sys.argv[1] == 'count':
+        nrows, cur = run_query(cur, """SELECT COUNT(*) FROM {}""".format(sys.argv[2]))
+        print(cur.fetchall())
+    elif sys.argv[1] == 'schema':
+        read_schema_from_db(cur, sys.argv[2])
+    # tbl_name = sys.argv[1]
+    # tbl_schema = schemas[tbl_name]
+    # file_name = sys.argv[2]
+    # delete_table_contents(cur, tbl_name)
+    # create_table(cur, tbl_name, tbl_schema)
+    # import_table_data(con, cur, tbl_name, file_name, tbl_schema)
+    # cur = run_query("""SELECT COUNT(*) FROM {}""".format(tbl_name))
+    # print(cur.fetchall())
     # print(import_data[0])
 
 
