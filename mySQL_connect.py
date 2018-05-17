@@ -158,14 +158,13 @@ def time_query(cur, query):
 def main():
     rds_info = load_connection_info('./login/.rds', ['port'])
     con, cur = rds_mySQL_connection(rds_info)
-    schemas = import_schemas_from_file()
     if sys.argv[1] == 'tables':
         nrows, cur = run_query(cur, """SHOW TABLES""")
         print(cur.fetchall())
     elif sys.argv[1] == 'query':
         nrows, cur = run_query(cur, sys.argv[2])
         print('number of results: {}'.format(nrows))
-        if input('display all results (y/n)? ') == 'y':
+        if raw_input('display all results (y/n)? ') == 'y':
             print(cur.fetchall())
     elif sys.argv[1] == 'tquery':
         nrows, cur, query_time = run_query(cur, sys.argv[2], benchmark=True)
@@ -174,7 +173,14 @@ def main():
         nrows, cur = run_query(cur, """SELECT COUNT(*) FROM {}""".format(sys.argv[2]))
         print(cur.fetchall())
     elif sys.argv[1] == 'schema':
-        read_schema_from_db(cur, sys.argv[2])
+        schema = read_schema_from_db(cur, sys.argv[2])
+        print(schema)
+    elif sys.argv[1] == 'import':
+        table=sys.argv[2]
+        schemas = import_schemas_from_file()
+        schema = schemas[table]
+        print(schema)
+        import_table_data(con, cur, table, table+'.csv', schema)
     # tbl_name = sys.argv[1]
     # tbl_schema = schemas[tbl_name]
     # file_name = sys.argv[2]
