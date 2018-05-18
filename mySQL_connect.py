@@ -144,7 +144,7 @@ def interval_query(cur, table, start, nrows):
     return nresults, cur
 
 def get_colnames(cur, table):
-    n, cur = run_fetch_query(cur, 'describe', table)
+    cur.execute("""DESCRIBE {}""".format(table))
     cols = cur.fetchall()
     return [col[0] for col in cols]
 
