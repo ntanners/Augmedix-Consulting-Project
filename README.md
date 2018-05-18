@@ -1,14 +1,10 @@
-# Augmedix Consulting Project
+# From Log to O(Log)* Nadav Tanners
+* or better
 
-## Augmedix - Unified data to detect IoT outages
+## An Insight Data Engineering Consulting Project by Nadav Tanners
 
 ### Company Description:
-Augmedix is on a mission to rehumanize healthcare by improving the patient-doctor interaction and thereby the overall quality of care delivered. 
-
-#### How does it work? 
-Doctors wear Google Glass and stream audio and video to Augmedix throughout the day. Behind the scenes, remote human experts create the medical notes for patient visits in real time, uploading the final notes to the EHR.
-
-Through the Augmedix platform we are able to save doctors an average of two to three hours per day. 
+Augmedix is on a mission to rehumanize healthcare by improving the patient-doctor interaction and thereby the overall quality of care delivered. Doctors wear Google Glass and stream audio and video to Augmedix throughout the day. Behind the scenes, remote human experts create the medical notes for patient visits in real time, uploading the final notes to the EHR.  The Augmedix platform saves doctors an average of two to three hours per day. 
 
 ### Problem Description:
 The Augmedix service essentially uses Google Glass as an IOT device, relying on low latency high throughput streaming of audio/video and other data over clinic WiFi environments. We generate tremendous amount of data related to how doctors interact with our devices and the general status of those devices in the field. This data is largely unstructured. When there is an issue causing a doctor to be offline, the root cause analysis requires digging through high volumes of data with ambiguous clarity. 
