@@ -1,5 +1,9 @@
 from elasticsearch import Elasticsearch, helpers
+<<<<<<< HEAD
 from mySQL_connect import load_connection_info, rds_mysql_connection, close_connection, get_colnames, interval_query, \
+=======
+from mySQL_connect import load_connection_info, rds_mySQL_connection, close_connection, get_colnames, interval_query, \
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
     read_schema_from_db
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
@@ -204,7 +208,11 @@ def benchmark_workers(connection, cur, table, low_tests, high_tests, batch_size,
 def main():
     # Connect to RDS
     rds_info = load_connection_info('./login/.rds', ['port'])
+<<<<<<< HEAD
     con, cur = rds_mysql_connection(rds_info)
+=======
+    con, cur = rds_mySQL_connection(rds_info)
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
     cur.execute("""SHOW TABLES""")
     table_list = [i[0] for i in cur.fetchall()]
 
