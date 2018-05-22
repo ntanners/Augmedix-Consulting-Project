@@ -1,6 +1,10 @@
 from elasticsearch import Elasticsearch, helpers
 <<<<<<< HEAD
+<<<<<<< HEAD
 from mySQL_connect import load_connection_info, rds_mysql_connection, close_connection, get_colnames, interval_query, \
+=======
+from mySQL_connect import load_connection_info, rds_mySQL_connection, close_connection, get_colnames, interval_query, \
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 =======
 from mySQL_connect import load_connection_info, rds_mySQL_connection, close_connection, get_colnames, interval_query, \
 >>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
@@ -209,7 +213,11 @@ def main():
     # Connect to RDS
     rds_info = load_connection_info('./login/.rds', ['port'])
 <<<<<<< HEAD
+<<<<<<< HEAD
     con, cur = rds_mysql_connection(rds_info)
+=======
+    con, cur = rds_mySQL_connection(rds_info)
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 =======
     con, cur = rds_mySQL_connection(rds_info)
 >>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4

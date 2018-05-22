@@ -4,11 +4,14 @@ import time
 import csv
 from datetime import datetime
 <<<<<<< HEAD
+<<<<<<< HEAD
 from argparse import ArgumentParser
 
 CONNECTION_PATH = '../login/.rds'
 
 CSV_PATH = '../table_csv_files/'
+=======
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 =======
 >>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 
@@ -35,8 +38,12 @@ def load_connection_info(path, intvars):
     return conn_info
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 def rds_mysql_connection(rds_info):
+=======
+def rds_mySQL_connection(rds_info):
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 =======
 def rds_mySQL_connection(rds_info):
 >>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
@@ -49,7 +56,10 @@ def rds_mySQL_connection(rds_info):
         print(e)
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
+=======
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 =======
 >>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 def close_connection(con, cur):
@@ -57,6 +67,7 @@ def close_connection(con, cur):
     con.close()
     print("Connection closed")
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 
 def delete_table_contents(cur, table):
@@ -80,6 +91,8 @@ def import_schemas_from_file():
             if len(line) == 0:
                 continue
 =======
+=======
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 def delete_table_contents(cur, table):
     cur.execute("DELETE FROM {}".format(table))
 
@@ -125,6 +138,9 @@ def import_schemas_from_file():
         for line in schemas_file:
             line = line.split()
             if len(line) == 0: continue
+<<<<<<< HEAD
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
+=======
 >>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
             if line[0] == 'tblname':
                 tbl_name = line[1]
@@ -143,7 +159,10 @@ def read_schema_from_db(cur, table):
     return tbl_schema
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
+=======
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 =======
 >>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 def create_table(cur, tbl_name, tbl_schema):
@@ -154,23 +173,30 @@ def create_table(cur, tbl_name, tbl_schema):
 
 def schema_process(tbl_schema, j, item):
 <<<<<<< HEAD
+<<<<<<< HEAD
     # Processes a table's csv file contents and converts strings to datetime or integer objects,
     # according to the table's schema.
     if tbl_schema[j][1] == 'DATETIME' and item != 'NULL':
         return datetime.strptime(item, "%Y-%m-%d %H:%M:%S")
 =======
+=======
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
     if tbl_schema[j][1] == 'DATETIME' and item != 'NULL':
         try:
             return datetime.strptime(item, "%Y-%m-%d %H:%M:%S")
         except:
             print(item)
             return 'x'
+<<<<<<< HEAD
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
+=======
 >>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
     elif 'INT' in tbl_schema[j][1]:
         return int(item)
     else:
         return item
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 
 def import_table_data(con, cur, table):
@@ -194,6 +220,8 @@ def import_table_data(con, cur, table):
             file_records.append(record)
             # Import records into the MySQL database table, 1,000 records at a time.
 =======
+=======
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 def import_table_data(con, cur, tbl_name, file_name, tbl_schema):
     file_records = []
     create_query_str = """INSERT INTO {} VALUES {}""".format(tbl_name, '(' + ','.join(['%s'] * len(tbl_schema)) + ')')
@@ -204,6 +232,9 @@ def import_table_data(con, cur, tbl_name, file_name, tbl_schema):
             # if i == 2: break
             record = [schema_process(tbl_schema, j, item) for j, item in enumerate(line)]
             file_records.append(record)
+<<<<<<< HEAD
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
+=======
 >>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
             if i % 1000 == 0:
                 print('inserting 1000 rows')
@@ -211,7 +242,10 @@ def import_table_data(con, cur, tbl_name, file_name, tbl_schema):
                 con.commit()
                 file_records = []
 <<<<<<< HEAD
+<<<<<<< HEAD
         # Insert any remaining records.
+=======
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 =======
 >>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
         print('inserting {} rows'.format(len(file_records)))
@@ -221,6 +255,7 @@ def import_table_data(con, cur, tbl_name, file_name, tbl_schema):
 
 def interval_query(cur, table, start, nrows):
 <<<<<<< HEAD
+<<<<<<< HEAD
     # Run a select query from a given starting point and with a given number of rows
     nresults = cur.execute("""SELECT * FROM {} LIMIT {},{}""".format(table, start, nrows))
     return nresults, cur
@@ -229,15 +264,21 @@ def interval_query(cur, table, start, nrows):
 def get_colnames(cur, table):
     # Generate a list of column names for a table in the database
 =======
+=======
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
     nresults = cur.execute("""SELECT * FROM {} LIMIT {},{}""".format(table, start, nrows))
     return nresults, cur
 
 def get_colnames(cur, table):
+<<<<<<< HEAD
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
+=======
 >>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
     cur.execute("""DESCRIBE {}""".format(table))
     cols = cur.fetchall()
     return [col[0] for col in cols]
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 
 def time_query(cur, query, show_results=False):
@@ -315,6 +356,8 @@ def main():
 if __name__ == '__main__':
     main()
 =======
+=======
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
 def time_query(cur, query):
     start_time = time.time()
     n, cur = run_query(cur, query)
@@ -391,5 +434,9 @@ def main():
     close_connection(con, cur)
 
 if __name__ == '__main__':
+<<<<<<< HEAD
+    main()
+>>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
+=======
     main()
 >>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
