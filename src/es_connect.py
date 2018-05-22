@@ -1,13 +1,5 @@
 from elasticsearch import Elasticsearch, helpers
-<<<<<<< HEAD
-<<<<<<< HEAD
 from mySQL_connect import load_connection_info, rds_mysql_connection, close_connection, get_colnames, interval_query, \
-=======
-from mySQL_connect import load_connection_info, rds_mySQL_connection, close_connection, get_colnames, interval_query, \
->>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
-=======
-from mySQL_connect import load_connection_info, rds_mySQL_connection, close_connection, get_colnames, interval_query, \
->>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
     read_schema_from_db
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
@@ -77,7 +69,7 @@ def migrate_table(connection, cur, table, workers, batch_size, limit, actions_fu
     t1 = time.time()
     setup_time = t1 - t0
     start = 0
-    nrows = limit
+    num_rows = limit
     sql_time = 0
     actions_time = 0
     es_time = 0
@@ -87,21 +79,21 @@ def migrate_table(connection, cur, table, workers, batch_size, limit, actions_fu
     doc_type_name = 'record'
     # Loop through the table in batches.  For each loop, create actions for the Elasticsearch bulk API and
     # submit those actions to the API.
-    while nrows > 0:
+    while num_rows > 0:
         t2 = time.time()
-        nresults, cur = interval_query(cur, table, start, batch_size)
+        num_results, cur = interval_query(cur, table, start, batch_size)
         t3 = time.time()
         sql_time += t3 - t2
-        if nresults == 0:
+        if num_results == 0:
             break
-        actions_list = actions_func(nresults, cur, col_names, index_name, doc_type_name)
+        actions_list = actions_func(num_results, cur, col_names, index_name, doc_type_name)
         t4 = time.time()
         actions_time += t4 - t3
         result = result + api_func(connection, workers, actions_list)
         t5 = time.time()
         es_time += t5 - t4
-        nrows -= nresults
-        start += nresults
+        num_rows -= num_results
+        start += num_results
     return (setup_time, sql_time, actions_time, es_time, sum([setup_time, sql_time, actions_time, es_time]))
 
 
@@ -146,6 +138,7 @@ def generate_bulk_actions_list(num_rows, cur, col_names, index_name, doc_type_na
 
 
 def generate_mapping(cur, table, doc_type_name):
+    # Generates mapping to be used in Elasticsearch index
     schema = read_schema_from_db(cur, table)
     properties = ""
     for i, col in enumerate(schema):
@@ -163,6 +156,8 @@ def generate_mapping(cur, table, doc_type_name):
 
 
 def benchmark_import_size(connection, cur, table, low_tests, high_tests):
+    # Runs benchmark tests on different batch sizes for the Elasticsearch Bulk API.
+    # Produces a bar chart plotting import speeds against batch sizes.
     import_times = []
     total_speeds = []
     sizes = []
@@ -175,7 +170,7 @@ def benchmark_import_size(connection, cur, table, low_tests, high_tests):
         import_times.append(times[4])
         sizes.append(batch_size)
         total_speeds.append(batch_size / times[4])
-    # Generate graph of benchmark results
+    # Generate bar chart of benchmark results
     sizecats = range(len(sizes))
     plt.bar(sizecats, total_speeds, align='center', width=0.4, color='orangered', label='Elasticsearch Import Speeds')
     plt.xlabel('Batch Size (# documents)', size='large')
@@ -187,6 +182,8 @@ def benchmark_import_size(connection, cur, table, low_tests, high_tests):
 
 
 def benchmark_workers(connection, cur, table, low_tests, high_tests, batch_size, limit):
+    # Runs benchmark tests on different numbers of parallel workers making Elasticsearch Bulk API calls.
+    # Produces a bar chart plotting impot speeds against numbers of workers.
     import_times = []
     num_workers = []
     total_speeds = []
@@ -197,7 +194,7 @@ def benchmark_workers(connection, cur, table, low_tests, high_tests, batch_size,
         import_times.append(times[4])
         num_workers.append(i)
         total_speeds.append(round(limit / (times[4]), 2))
-    # Generate graph of benchmark results
+    # Generate bar chart of benchmark results
     worker_categories = range(len(num_workers))
     plt.bar(worker_categories, total_speeds, align='center', width=0.4, color='orangered',
             label='Elasticsearch Import Speeds')
@@ -212,15 +209,7 @@ def benchmark_workers(connection, cur, table, low_tests, high_tests, batch_size,
 def main():
     # Connect to RDS
     rds_info = load_connection_info('./login/.rds', ['port'])
-<<<<<<< HEAD
-<<<<<<< HEAD
     con, cur = rds_mysql_connection(rds_info)
-=======
-    con, cur = rds_mySQL_connection(rds_info)
->>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
-=======
-    con, cur = rds_mySQL_connection(rds_info)
->>>>>>> d6498554bfdc4a36c002b2b47737b1d252a8c6c4
     cur.execute("""SHOW TABLES""")
     table_list = [i[0] for i in cur.fetchall()]
 

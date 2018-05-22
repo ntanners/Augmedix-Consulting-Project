@@ -8,18 +8,11 @@ CONNECTION_PATH = '../login/.rds'
 
 CSV_PATH = '../table_csv_files/'
 
-QUERIES = {
-    'describe': """DESCRIBE {}""",
-    'count': """SELECT COUNT(*) FROM {}""",
-    'table_list': """SHOW TABLES""",
-    'contents': """SELECT * FROM {}""",
-    'contents_limit': """SELECT * FROM {} LIMIT {}"""
-}
-
 
 def load_connection_info(path, intvars):
-    """ Takes two inputs:
-        path (string): path where connection informaton is stored
+    """ Loads connection information from a file.
+        Takes two inputs:
+        path (string): path where connection information is stored
         intvars (list): variables that should be converted to int values"""
     with open(path) as conn_file:
         conn_info = {}
@@ -32,6 +25,12 @@ def load_connection_info(path, intvars):
 
 
 def rds_mysql_connection(rds_info):
+    """ Connects to Amazon RDS instance using connection information in the following format:
+        host: <rds hostname>
+        port: <rds port>
+        user: <rds username>
+        password: <rds password>
+        db: <database name on rds>"""
     try:
         con = MySQLdb.Connection(**rds_info)
         cur = con.cursor()
@@ -52,14 +51,21 @@ def delete_table_contents(cur, table):
 
 
 def run_query(cur, query, show_results=False):
-    nrows = cur.execute(query)
-    print('the query returned {} rows'.format(nrows))
+    """ Runs a query on the database and prints the number of rows returned.
+        If show_results is set to True, it also prints all returned results."""
+    num_rows = cur.execute(query)
+    print('the query returned {} rows'.format(num_rows))
     if show_results:
         for row in cur.fetchall():
             print(row)
 
 
 def import_schemas_from_file():
+    """ Imports schema information from an external text file.
+        Used to create tables in the database with the proper schema before importing records.
+        Prerequisites: a text file with schema information needs to be saved as tblSchemas in the home
+        directory with the following format:
+        <column name> <data type> (e.g., 'doctor_name VARCHAR(150)')"""
     with open('./tblSchemas') as schemas_file:
         schemas = {}
         for line in schemas_file:
@@ -74,6 +80,8 @@ def import_schemas_from_file():
 
 
 def read_schema_from_db(cur, table):
+    """ Reads schema information from a table in the database.
+        Used to define mappings for import into Elasticsearch."""
     num_rows = cur.execute("""DESCRIBE {}""".format(table))
     tbl_schema = []
     for i in range(num_rows):
@@ -99,26 +107,26 @@ def schema_process(tbl_schema, j, item):
         return item
 
 
-def import_table_data(con, cur, table):
+def import_table_data(con, cur, tbl_name):
     # Imports a table into the MySQL database.
     # Prerequisite: a CSV with the name <table_name>.csv needs to be saved in the CSV_PATH directory
 
     # Read schema from external file and create table according to schema
     schemas = import_schemas_from_file()
-    tbl_schema = schemas[table]
-    create_table(cur, table, tbl_schema)
+    tbl_schema = schemas[tbl_name]
+    create_table(cur, tbl_name, tbl_schema)
 
     # Loop through CSV file and prepare data for import
     file_records = []
-    create_query_str = """INSERT INTO {} VALUES {}""".format(table, '(' + ','.join(['%s'] * len(tbl_schema)) + ')')
-    table_csv_path = CSV_PATH + table + '.csv'
+    create_query_str = """INSERT INTO {} VALUES {}""".format(tbl_name, '(' + ','.join(['%s'] * len(tbl_schema)) + ')')
+    table_csv_path = CSV_PATH + tbl_name + '.csv'
 
     with open(table_csv_path) as csv_file:
         reader = csv.reader(csv_file, delimiter=',')
         for i, line in enumerate(reader):
             record = [schema_process(tbl_schema, j, item) for j, item in enumerate(line)]
             file_records.append(record)
-            # Import records into the MySQL database table, 1,000 records at a time.
+            # Import records into the MySQL database table, 1,000 records at a time
             if i % 1000 == 0:
                 print('inserting 1000 rows')
                 cur.executemany(create_query_str, file_records)
@@ -130,9 +138,9 @@ def import_table_data(con, cur, table):
         con.commit()
 
 
-def interval_query(cur, table, start, nrows):
+def interval_query(cur, table, start, num_rows):
     # Run a select query from a given starting point and with a given number of rows
-    nresults = cur.execute("""SELECT * FROM {} LIMIT {},{}""".format(table, start, nrows))
+    nresults = cur.execute("""SELECT * FROM {} LIMIT {},{}""".format(table, start, num_rows))
     return nresults, cur
 
 
