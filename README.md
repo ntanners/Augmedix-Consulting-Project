@@ -11,7 +11,7 @@
 2. [My Work](README.md#my-work)
     * [Proof-of-Concept Data Pipeline](README.md#proof-of-concept-pipeline)
     * [Optimizing Indexing Speed](README.md#optimizing-indexing-speed)
-        * [Determining the Optimal Batch Size](README.md#determining-the-optimalbatch-size)
+        * [Determining the Optimal Batch Size](README.md#determining-the-optimal-batch-size)
         * [Implementing Parallel API Calls](README.md#implementing-parallel-api-calls)
     * [Optimization Results](README.md#optimization-results)
 3. [Repo Structure](README.md#repo-structure)
