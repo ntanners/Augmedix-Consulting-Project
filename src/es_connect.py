@@ -1,3 +1,23 @@
+"""
+This module includes functions for connecting to an Elasticsearch cluster, creating mappings for indexing
+documents, using the Elasticsearch Bulk API to move tables from mySQL to Elasticsearch (both with a single
+API call process and with parallel processes) and running benchmark tests on batch size and parallel
+process workers.
+
+Functions:
+    submit_single_bulk_api: indexes records by submitting a single call to the Elasticsearch Bulk API
+    submit_parallel_es_requests: indexes records by submitting parallel calls to the Elasticsearch Bulk API
+    migrate_table: migrates a table from MySQL to Elasticsearch using either a single API call or parallel calls
+    create_index: creates a new index in Elasticsearch
+    generate_json: generates actions to be used in parallel Elasticsearch Bulk API calls
+    generate_bulk_actions_list: generates actions to be used in a single Elasticsearch Bulk API call
+    generate_mapping: generates mapping for a table to be indexed in Elasticsearch
+    benchmark_import_size: runs benchmark tests to determine the optimal batch size for the Elasticsearch bulk API
+    benchmark_workers: runs benchmark tests to determine the optimal number of workers for Elasticsearch bulk API calls
+    main: uses argparse to set up a command line interface for this module
+"""
+
+
 from elasticsearch import Elasticsearch, helpers
 from mySQL_connect import load_connection_info, rds_mysql_connection, close_connection, get_colnames, interval_query, \
     read_schema_from_db
@@ -23,13 +43,29 @@ PORT = 9200
 
 
 def submit_single_bulk_api(connection, workers, actions_list):
-    # workers parameter is not used but is included in order to allow migrate_table to call either api-calling function
+    """ Imports records from a table into Elasticsearch by submitting a single call to the Elasticsearch Bulk API.
+        Args:
+            connection (string): name of the Elasticsearch connection to be used
+            workers (integer): not used in this function.  Included so that migrate_table can call either
+                this function or submit_parallel_es_requests
+            actions_list (list of json objects): list of actions to send to the Elasticsearch Bulk API
+        Returns:
+            list containing the response returned from the Bulk API call
+    """
     es = Elasticsearch(CONNECTION_IP[connection], port=PORT)
     response = helpers.bulk(es, actions_list)
     return [response]
 
 
 def submit_parallel_es_requests(connection, workers, actions_list):
+    """ Imports a table into Elasticsearch by submitting parallel calls to the Elasticsearch Bulk API.
+        Args:
+            connection (string): name of the Elasticsearch connection to be used
+            workers (integer): number of parallel workers to make Bulk API calls with
+            actions_list (list of json objects): list of actions to send to the Elasticsearch Bulk API
+        Returns:
+            list of warnings returned if too many API call have been submitted (empty list otherwise)
+    """
     flags = []
     # Initialize variables used for concurrent futures
     index = actions_list[0]['index']['_index']
@@ -40,14 +76,19 @@ def submit_parallel_es_requests(connection, workers, actions_list):
     futures = []
     # Set up for workers loop
     worker_start = 0
-    worker_end = int(round(len(actions_list) / workers))  # each document in actions_list has 2 rows
+    worker_end = int(round(len(actions_list) / workers))
+    # Cycle through the different Elasticsearch nodes in the cluster
     ip_cycle = cycle(ip_list)
     for i in range(workers):
+        # get a slice of actions for each worker
         worker_actions_list = actions_list[worker_start:worker_end]
+        # convert the list of json objects to a single '\n'-delimited json object
         worker_actions = "\n".join([json.dumps(x) for x in worker_actions_list]) + "\n"
         worker_start = worker_end
         worker_end = min(worker_end + int(round(len(actions_list) / workers)), len(actions_list))
         ip = next(ip_cycle)
+        # add a bulk API call to the thread pool, using the 'headers' keyword argument to specify the type of
+        # json document being used.
         futures.append(tpool.submit(func, ip, data=worker_actions, headers={"Content-type": "application/x-ndjson"}))
     for f in as_completed(futures):
         try:
@@ -62,6 +103,30 @@ def submit_parallel_es_requests(connection, workers, actions_list):
 
 
 def migrate_table(connection, cur, table, workers, batch_size, limit, actions_func, api_func):
+    """ Migrates a table into Elasticsearch using the Elasticsearch Bulk API.  It can use a single worker
+        making API calls or multiple workers making API calls in parallel, based on the value of api_func.
+        Args:
+            connection (string): name of the Elasticsearch connection to be used
+            cur (cursor object): MySQL cursor object that is connected to the MySQL database
+                where records will be pulled from
+            table (string): the name of the table to be indexed in Elasticsearch
+            workers (integer): number of parallel workers to use in Bulk API calls (only used in the parallel
+                API calls approach)
+            batch_size (integer): number of records to send to Elasticsearch in each Bulk API call
+            limit (integer): total number of records to migrate from MySQL to Elasticsearch
+            actions_func (function): function to use to generate actions for the Bulk API call.  Can be either
+                generate_json (for the parallel API calls approach) or generate_bulk_actions_list (for the
+                non-parallel approach)
+            api_func (function): function to use to make calls to the Elasticsearch Bulk API.  Can be either
+                submit_parallel_es_requests (for the parallel API calls approach) or submit_single_bulk_API
+                (for the non-parallel approach)
+        Returns:
+            tuple: contains time required to set up the migration process (setup_time), time required to
+                query data from the table in the MySQL database (sql_time), time required to generate
+                actions for all Bulk API calls (actions_time), time required for Elasticsearch to index
+                records (es_time), and the total time for the whole process.
+    """
+
     # Setup steps: create index, get column names (for action generation), initialize variables
     t0 = time.time()
     create_index(connection, cur, table)
@@ -89,7 +154,7 @@ def migrate_table(connection, cur, table, workers, batch_size, limit, actions_fu
         actions_list = actions_func(num_results, cur, col_names, index_name, doc_type_name)
         t4 = time.time()
         actions_time += t4 - t3
-        result = result + api_func(connection, workers, actions_list)
+        result += api_func(connection, workers, actions_list)
         t5 = time.time()
         es_time += t5 - t4
         num_rows -= num_results
@@ -98,6 +163,14 @@ def migrate_table(connection, cur, table, workers, batch_size, limit, actions_fu
 
 
 def create_index(connection, cur, table):
+    """ Creates a new index in Elasticsearch.  If the index already exists, this function deletes it
+        before creating a new index.
+        Args:
+            connection (string): name of the Elasticsearch connection to be used
+            cur (cursor object): MySQL cursor object that is connected to the MySQL database where records
+                will be pulled from
+            table (string): name of the table to be indexed in Elasticsearch
+    """
     mapping = generate_mapping(cur, table, 'record')
     es = Elasticsearch(CONNECTION_IP[connection], port=PORT)
     index_name = table + "_index"
@@ -107,7 +180,19 @@ def create_index(connection, cur, table):
     print(response)
 
 
-def generate_json(num_rows, cur, colnames, index_name, doc_type_name):
+def generate_json(num_rows, cur, col_names, index_name, doc_type_name):
+    """ Generates a list of json objects to be used by submit_parallel_es_requests(), which uses the Requests
+        Python library to submit parallel calls to the Elasticsearch Bulk API.
+        Args:
+            num_rows (integer): number of rows in the MySQL table to be indexed by Elasticsearch
+            cur (cursor object): MySQL cursor object that holds the result of the query pulling records from
+                the table in the MySQL database
+            col_names (list of strings): names of columns in the table in the MySQL database
+            index_name (string): name of the index in Elasticsearch where records will be added
+            doc_type_name (string): name of the document type in Elasticsearch where records will be added
+        Returns:
+            list of json objects (Python dictionaries)
+    """
     num_rows = min(num_rows, cur.rowcount)
     body = []
     header = {"index": {"_index": index_name, "_type": doc_type_name}}
@@ -115,13 +200,25 @@ def generate_json(num_rows, cur, colnames, index_name, doc_type_name):
         line = cur.fetchone()
         content = {}
         for j, item in enumerate(line):
-            content[colnames[j]] = str(item)
+            content[col_names[j]] = str(item)
         body.append(header)
         body.append(content)
     return body
 
 
 def generate_bulk_actions_list(num_rows, cur, col_names, index_name, doc_type_name):
+    """ Generates a list of actions to be used by submit_single_bulk_api(), which uses the Bulk API
+        helpers Python library.
+        Args:
+            num_rows (integer): number of rows in the MySQL table to be indexed by Elasticsearch
+            cur (cursor object): MySQL cursor object that holds the result of the query pulling records from
+                the table in the MySQL database
+            col_names (list of strings): names of columns in the table in the MySQL database
+            index_name (string): name of the index in Elasticsearch where records will be added
+            doc_type_name (string): name of the document type in Elasticsearch where records will be added
+        Returns:
+            list of json objects (Python dictionaries)
+    """
     actions = []
     num_rows = min(num_rows, cur.rowcount)
     for i in range(num_rows):
@@ -138,11 +235,20 @@ def generate_bulk_actions_list(num_rows, cur, col_names, index_name, doc_type_na
 
 
 def generate_mapping(cur, table, doc_type_name):
-    # Generates mapping to be used in Elasticsearch index
+    """ Generates mapping to be used in creating an index in Elasticsearch.
+        Args:
+            cur (cursor object): MySQL cursor object that is connected to the database where the table to be
+                mapped currently is
+            table (string): name of the table to be mapped
+            doc_type_name (string): name to be used for the doc_type assigned to this table in Elasticsearch
+        Returns:
+            json object (Python library) with mapping information for Elasticsearch
+    """
     schema = read_schema_from_db(cur, table)
     properties = ""
     for i, col in enumerate(schema):
         col_name = '"' + col[0] + '"'
+        # sets different data types if the schema indicates that the field is an integer or a date
         if 'int' in col[1]:
             dtype = '"integer"'
         elif col[1] == 'datetime':
@@ -156,8 +262,18 @@ def generate_mapping(cur, table, doc_type_name):
 
 
 def benchmark_import_size(connection, cur, table, low_tests, high_tests):
-    # Runs benchmark tests on different batch sizes for the Elasticsearch Bulk API.
-    # Produces a bar chart plotting import speeds against batch sizes.
+    """ Performs benchmark tests to determine the optimal batch size to use for Elasticsearch Bulk API calls.
+        For benchmarking purposes, it is recommended to connect to a single-node Elasticsearch cluster.
+
+        Args:
+            connection (string): name of the Elasticsearch connection to be used
+            cur (cursor object): MySQL cursor object for accessing the table to be migrated
+            table (string): name of the table to be migrated
+            low_tests (integer): starting point of the range to use for batch size (2 is raised to this power)
+            high_tests (integer): ending point of the range to use for batch size (2 is raised to this power)
+        Returns:
+            shows a bar graph plotting the total indexing speed against the batch size used for API calls.
+    """
     import_times = []
     total_speeds = []
     sizes = []
@@ -182,6 +298,20 @@ def benchmark_import_size(connection, cur, table, low_tests, high_tests):
 
 
 def benchmark_workers(connection, cur, table, low_tests, high_tests, batch_size, limit):
+    """ Performs benchmark tests to determine the optimal number of workers to use in making parallel Elasticsearch
+        Bulk API calls.
+        Args:
+            connection (string): name of the Elasticsearch connection to be used
+            cur (cursor object): MySQL cursor object for accessing the table to be migrated
+            table (string): name of the table to be migrated
+            low_tests (integer): starting point of the range to use for the number of workers
+            high_tests (integer): ending point of the range to use for the number of workers
+            batch_size (integer): batch size to be used in each test
+            limit: total number of records to be imported during each test
+        Returns:
+            shows a bar graph plotting the total indexing speed against the number of workers used for parallel
+            API calls
+    """
     # Runs benchmark tests on different numbers of parallel workers making Elasticsearch Bulk API calls.
     # Produces a bar chart plotting impot speeds against numbers of workers.
     import_times = []
@@ -207,6 +337,9 @@ def benchmark_workers(connection, cur, table, low_tests, high_tests, batch_size,
 
 
 def main():
+    """
+    Uses argparser to implement a command line interface for the functions in this module.
+    """
     # Connect to RDS
     rds_info = load_connection_info('./login/.rds', ['port'])
     con, cur = rds_mysql_connection(rds_info)

@@ -97,8 +97,8 @@ def create_table(cur, tbl_name, tbl_schema):
 
 
 def schema_process(tbl_schema, j, item):
-    # Processes a table's csv file contents and converts strings to datetime or integer objects,
-    # according to the table's schema.
+    """ Processes a table's csv file contents and converts strings to datetime or integer objects,
+        according to the table's schema."""
     if tbl_schema[j][1] == 'DATETIME' and item != 'NULL':
         return datetime.strptime(item, "%Y-%m-%d %H:%M:%S")
     elif 'INT' in tbl_schema[j][1]:
@@ -108,8 +108,8 @@ def schema_process(tbl_schema, j, item):
 
 
 def import_table_data(con, cur, tbl_name):
-    # Imports a table into the MySQL database.
-    # Prerequisite: a CSV with the name <table_name>.csv needs to be saved in the CSV_PATH directory
+    """ Imports a table into the MySQL database.
+        Prerequisite: a CSV with the name <table_name>.csv needs to be saved in the CSV_PATH directory."""
 
     # Read schema from external file and create table according to schema
     schemas = import_schemas_from_file()
@@ -139,20 +139,20 @@ def import_table_data(con, cur, tbl_name):
 
 
 def interval_query(cur, table, start, num_rows):
-    # Run a select query from a given starting point and with a given number of rows
+    """ Runs a select query from a given starting point and with a given number of rows"""
     nresults = cur.execute("""SELECT * FROM {} LIMIT {},{}""".format(table, start, num_rows))
     return nresults, cur
 
 
 def get_colnames(cur, table):
-    # Generate a list of column names for a table in the database
+    """ Generates a list of column names for a table in the database"""
     cur.execute("""DESCRIBE {}""".format(table))
     cols = cur.fetchall()
     return [col[0] for col in cols]
 
 
 def time_query(cur, query, show_results=False):
-    # Run a query and print the time that it took the query to run
+    """ Runs a query and print the time that it took the query to run"""
     start_time = time.time()
     run_query(cur, query, show_results)
     end_time = time.time()
@@ -220,6 +220,7 @@ def main():
         import_table_data(**args)
 
     close_connection(con, cur)
+
 
 if __name__ == '__main__':
     main()
