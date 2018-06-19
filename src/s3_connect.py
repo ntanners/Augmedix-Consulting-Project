@@ -6,8 +6,13 @@ LOGIN_PATH = '../login/.aws'
 
 
 def connect_to_s3(access_key, secret_key):
-    """Creates a connection to S3.
-    Inputs: AWS primary key and access key"""
+    """ Creates a connection to S3.
+        Args:
+            access_key (string) - AWS primary key
+            secret_key (string) - AWS secret key
+        Returns:
+            s3 connection object
+    """
     try:
         s3con = S3Connection(access_key, secret_key)
         print('Connection successful')
@@ -17,13 +22,24 @@ def connect_to_s3(access_key, secret_key):
 
 
 def list_buckets(s3con):
-    """Lists all of the buckets in an S3 connection"""
+    """ Prints all of the buckets in an S3 connection
+        Args:
+            s3con (s3 connection object) - S3 connection object where buckets are located
+        Returns:
+            Does not return anything.  Prints the name of buckets to the console.
+    """
     listbuckets = s3con.get_all_buckets()
     print(listbuckets)
 
 
 def list_bucket_contents(s3con, bucket):
-    """Lists all of the contents of an S3 bucket"""
+    """ Prints all of the contents of an S3 bucket
+        Args:
+            s3con (s3 connection object) - S3 connection object where bucket contents are located
+            bucket (string) - name of the s3 bucket where contents are located
+        Returns:
+            Does not return anything.  Prints the name of bucket contents to the console.
+    """
     bucket = s3con.get_bucket(bucket)
     contents = bucket.list()
     for item in contents:
@@ -31,19 +47,35 @@ def list_bucket_contents(s3con, bucket):
 
 
 def get_file(s3con, bucket, folder, filename):
-    """Downloads a file from an S3 bucket into the local directory
-    Inputs: connection, bucket name, folder (full path) in the bucket, filename"""
+    """ Downloads a file from an S3 bucket into the local directory.
+        Args:
+            s3con (s3 connection object) - S3 connection object where file is located
+            bucket (string) - name of the bucket where the file is located
+            folder (string) - name of the folder where the file is located
+            filename (string) - name of the file to be downloaded
+        Returns:
+            Does not return anything. Downloads the specified file to the local directory.
+    """
     bucket_obj = s3con.get_bucket(bucket)
     key = bucket_obj.get_key('/' + folder + '/' + filename)
     key.get_contents_to_filename(filename)
 
 
 def close_s3_connection(con):
+    """ Closes an s3 connection
+        Args:
+            con (s3 connection object) - S3 connection object to be closed
+        Returns:
+            Does not return anything.  Closes the S3 connection and prints a message to the console.
+    """
     con.close()
     print('Connection closed')
 
 
 def __main__():
+    """
+    Uses ArgumentParser to implement a command line interface for the functions in this module
+    """
     # Connect to S3
     s3_info = load_connection_info(LOGIN_PATH, [])
     s3con = connect_to_s3(s3_info['access_key'], s3_info['secret_key'])
